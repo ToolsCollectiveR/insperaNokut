@@ -1,0 +1,188 @@
+---
+title: "Arbeidsflyt for håndtering av bidragsytere i Inspera for NOKUT"
+author: "NOKUT"
+date: "`r Sys.Date()`"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Arbeidsflyt for håndtering av bidragsytere i Inspera for NOKUT}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+## Introduksjon
+insperaNokut-pakken gir verktøy for å administrere bidragsytere i Inspera-tester for NOKUT. Denne vignetten demonstrerer de viktigste arbeidsflyten for å:
+
+Hente bidragsytere fra en eksisterende test
+Gjenkjenne FEIDE-brukernavn automatisk
+Manuelt tilordne bidragsytere til komiteer
+Opprette komiteer i en måltest
+Legge til bidragsytere i måltesten med korrekte komitétilordninger
+
+## Installasjon
+Du kan installere insperaNokut-pakken fra GitHub:
+```r
+# Installer devtools hvis du ikke har det
+install.packages("devtools")
+
+# Installer insperaNokut-pakken
+devtools::install_github("nokut/insperaNokut")
+```
+## Last inn pakken
+```r
+library(insperaNokut)
+```
+
+## Konfigurer API-nøkkel
+For all interaksjon med Inspera API trenger du en API-nøkkel:
+```r
+# Sett API-nøkkel (erstatt med din faktiske nøkkel)
+api_key <- "din_api_nøkkel_her"
+```
+## Arbeidsflyt 1: Fullstendig automatisert overføring med interaktiv komitétilordning
+Denne arbeidsflyten gjør alt i ett trinn, med interaktiv mapping der du manuelt tilordner bidragsytere til komiteer:
+```r
+# Fullstendig arbeidsflyt med interaktiv komité-mapping
+result <- complete_inspera_contributor_workflow(
+  source_test_id = "123456789",  # ID til kildetesten
+  target_test_id = "987654321",  # ID til måltesten
+  api_key = api_key
+)
+```
+Denne funksjonen vil:
+
+Hente bidragsytere fra kildetesten
+Be deg om å angi en komité for hver bidragsyter
+Opprette disse komiteene i måltesten
+Legge til bidragsyterne med riktige komitétilordninger
+
+## Arbeidsflyt 2: Fullstendig automatisert overføring med forhåndsdefinerte komiteer
+Hvis du allerede vet hvilke komiteer bidragsyterne skal tilordnes, kan du angi dette på forhånd:
+```r
+# Definer komité-mapping
+committee_mapping <- list(
+  "Mathias Meier" = "1ab",
+  "Karl Johan Skeidsvoll" = "2ab",
+  "Maria Louise Karlsen" = "3ab",
+  "Marte Pedersen" = "1ab"
+)
+
+# Kjør arbeidsflyten med forhåndsdefinert mapping
+result <- complete_inspera_contributor_workflow(
+  source_test_id = "123456789",
+  target_test_id = "987654321",
+  committee_mapping = committee_mapping,
+  api_key = api_key
+)
+```
+
+## Arbeidsflyt 3: Trinnvis prosess for mer kontroll
+Hvis du foretrekker mer kontroll over prosessen, kan du utføre trinnene enkeltvis:
+
+Trinn 1: Hent bidragsytere fra kildetesten
+```r
+# Hent bidragsytere
+contributors_result <- get_feide_contributors_and_save_csv(
+  test_id = "123456789",
+  api_key = api_key
+)
+
+# Se på resultatet
+head(contributors_result$contributors_with_feide)
+```
+Dette trinnet vil produsere flere CSV-filer:
+
+test_123456789_contributors_feide.csv - Komplett bidragsyterliste med FEIDE-brukernavn
+test_123456789_external_ids_detail.csv - Detaljert informasjon om eksterne bruker-ID-er
+test_123456789_essential_info.csv - Forenklet liste for manuell import
+
+Trinn 2: Opprett YAML-fil med komitétilordninger
+```r
+# Definer komité-mapping
+committee_mapping <- list(
+  "Mathias Meier" = "1ab",
+  "Karl Johan Skeidsvoll" = "2ab",
+  "Maria Louise Karlsen" = "3ab",
+  "Marte Pedersen" = "1ab"
+)
+
+# Konverter CSV til YAML med komité-mapping
+yaml_result <- contributors_feide_csv_to_yaml(
+  contributors_csv = "test_123456789_contributors_feide.csv",
+  manual_committee_mapping = committee_mapping
+)
+
+# Stien til YAML-filen som ble opprettet
+yaml_path <- yaml_result$yaml_path
+cat("YAML-fil opprettet:", yaml_path, "\n")
+```
+
+Trinn 3: Opprett komiteer og tilordne bidragsytere
+```r
+# Opprett komiteer og legg til bidragsytere i måltesten
+workflow_result <- create_committees_and_assign_contributors(
+  test_id = "987654321",
+  yaml_path = yaml_path,
+  api_key = api_key
+)
+
+# Sjekk status
+if (workflow_result$committee_success && workflow_result$contributor_success) {
+  cat("Operasjonen var vellykket!\n")
+} else {
+  cat("Operasjonen var delvis vellykket eller feilet\n")
+}
+```
+
+Trinn 3: Opprett komiteer og tilordne bidragsytere
+```r
+# Opprett komiteer og legg til bidragsytere i måltesten
+workflow_result <- create_committees_and_assign_contributors(
+  test_id = "987654321",
+  yaml_path = yaml_path,
+  api_key = api_key
+)
+
+# Sjekk status
+if (workflow_result$committee_success && workflow_result$contributor_success) {
+  cat("Operasjonen var vellykket!\n")
+} else {
+  cat("Operasjonen var delvis vellykket eller feilet\n")
+}
+```
+
+## Enkeltfunksjoner: Mer detaljer
+Opprette komiteer
+Hvis du bare vil opprette komiteer uten å legge til bidragsytere:
+```r
+committee_result <- create_committees(
+  test_id = "987654321",
+  yaml_path = yaml_path,
+  api_key = api_key
+)
+```
+Legge til bidragsytere
+Hvis du bare vil legge til bidragsytere (forutsetter at komiteene allerede eksisterer):
+```r
+contributor_result <- assign_contributors(
+  test_id = "987654321",
+  yaml_path = yaml_path,
+  api_key = api_key
+)
+```
+
+Feilsøking
+Hvis du støter på problemer:
+
+API-autentisering: Kontroller at API-nøkkelen er korrekt
+```r
+auth_result <- authenticate_inspera(api_key)
+```
+Test-ID: Sørg for at test-ID-ene er korrekte og at du har tilgang til testene
+Komiteer eksisterer ikke: Hvis du får feilmeldingen "Committee X does not exist", kontroller at komiteene ble opprettet og at navnene matcher nøyaktig
+Brukernavn-problemer: Hvis brukere ikke blir lagt til, kontroller at FEIDE-brukernavnene er korrekte
