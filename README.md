@@ -28,10 +28,10 @@ result <- get_feide_contributors_and_save_csv("<testid>")
 ```r
 # Definer manuell komité-mapping
 committee_mapping <- list(
-  "Mathias Meier" = "1ab",
-  "Karl Johan Skeidsvoll" = "2ab",
-  "Maria Louise Karlsen" = "3ab",
-  "Marte Pedersen" = "1ab"
+  "Navn Navnesen" = "1ab",
+  "Navn Navnesen" = "2ab",
+  "Navn Navnesen" = "3ab",
+  "Navn Navnesen" = "1ab"
 )
 
 # Konverter CSV til YAML med komité-mapping
@@ -76,7 +76,7 @@ create_committees() - Oppretter komiteer i en test basert på YAML-fil
 assign_contributors() - Tilordner bidragsytere til en test med komitétilknytning
 create_committees_and_assign_contributors() - Kombinert funksjon som oppretter komiteer og tilordner bidragsytere
 complete_inspera_contributor_workflow() - Fullstendig arbeidsflyt med støtte for interaktiv komité-mapping
-
+```r
 complete_inspera_contributor_workflow(
   source_test_id = "330584412",
   target_test_id = "337279121",
