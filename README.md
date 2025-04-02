@@ -11,7 +11,7 @@ Du kan installere pakken fra GitHub med:
 install.packages("devtools")
 
 # Installer insperaNokut-pakken
-devtools::install_github("nokut/insperaNokut")
+devtools::install_github("ToolsCollectiveR/insperaNokut")
 
 ```
 
