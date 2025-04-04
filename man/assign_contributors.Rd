@@ -4,7 +4,13 @@
 \alias{assign_contributors}
 \title{Tilordne bidragsytere til en test med komiteer}
 \usage{
-assign_contributors(test_id, yaml_path, api_key = NULL, token = NULL)
+assign_contributors(
+  test_id,
+  yaml_path,
+  api_key = NULL,
+  token = NULL,
+  verbose = TRUE
+)
 }
 \arguments{
 \item{test_id}{ID-en til testen}
@@ -14,6 +20,8 @@ assign_contributors(test_id, yaml_path, api_key = NULL, token = NULL)
 \item{api_key}{API-nøkkel for Inspera}
 
 \item{token}{Tilgangstoken (hvis ikke oppgitt, blir det hentet automatisk)}
+
+\item{verbose}{Hvis TRUE, skriv ut detaljert informasjon om hver bidragsyter}
 }
 \value{
 En liste med resultater fra tilordningen

@@ -539,14 +539,22 @@ find_feide_username <- function(contributors_list) {
 #' @param test_id ID-en til testen
 #' @param yaml_path Sti til YAML-fil med komiténavn
 #' @param api_key API-nøkkel for Inspera
+#' @param token Tilgangstoken (hvis ikke oppgitt, blir det hentet automatisk)
 #' @return En liste med resultater for hver komité
 #' @importFrom httr POST GET add_headers content status_code
 #' @importFrom yaml read_yaml
 #' @importFrom jsonlite fromJSON
 #' @export
-create_committees <- function(test_id, yaml_path, api_key = NULL) {
-  # Få faktisk API-nøkkel
-  actual_api_key <- get_api_key(api_key)
+create_committees <- function(test_id, yaml_path, api_key = NULL, token = NULL) {
+  # Få faktisk API-nøkkel hvis token ikke er oppgitt
+  if (is.null(token)) {
+    actual_api_key <- get_api_key(api_key)
+    # Autentisering
+    auth_result <- authenticate_inspera(actual_api_key)
+    token <- auth_result$token
+  } else {
+    cat("Using provided authentication token\n")
+  }
   
   cat("Starting committee creation for test", test_id, "...\n")
   
@@ -565,10 +573,6 @@ create_committees <- function(test_id, yaml_path, api_key = NULL) {
   committees <- committees[!is.na(committees) & committees != ""] # Fjern tomme verdier
   
   cat("Found", length(committees), "unique committees in YAML file:", paste(committees, collapse=", "), "\n")
-  
-  # Authentication
-  auth_result <- authenticate_inspera(actual_api_key)
-  token <- auth_result$token
   
   # Check existing committees
   test_info <- get_test_info(test_id, token)
@@ -688,13 +692,14 @@ create_committees <- function(test_id, yaml_path, api_key = NULL) {
 #' @param yaml_path Sti til YAML-fil med bidragsytere
 #' @param api_key API-nøkkel for Inspera
 #' @param token Tilgangstoken (hvis ikke oppgitt, blir det hentet automatisk)
+#' @param verbose Hvis TRUE, skriv ut detaljert informasjon om hver bidragsyter
 #' @return En liste med resultater fra tilordningen
 #' @importFrom httr POST GET add_headers content status_code
 #' @importFrom yaml read_yaml
 #' @importFrom jsonlite fromJSON
 #' @importFrom purrr map_dfr
 #' @export
-assign_contributors <- function(test_id, yaml_path, api_key = NULL, token = NULL) {
+assign_contributors <- function(test_id, yaml_path, api_key = NULL, token = NULL, verbose = TRUE) {
   # Få faktisk API-nøkkel hvis token ikke er angitt
   if (is.null(token)) {
     actual_api_key <- get_api_key(api_key)
@@ -716,7 +721,7 @@ assign_contributors <- function(test_id, yaml_path, api_key = NULL, token = NULL
       externalId = contributor$externalId,
       firstName = contributor$firstName,
       lastName = contributor$lastName,
-      email = contributor$email,
+      email = if ("email" %in% names(contributor)) contributor$email else NA,
       roomName = if ("roomName" %in% names(contributor)) contributor$roomName else "Digital",
       buildingName = if ("buildingName" %in% names(contributor)) contributor$buildingName else "NOKUT",
       committee = if ("committee" %in% names(contributor)) contributor$committee else NA,
@@ -724,7 +729,8 @@ assign_contributors <- function(test_id, yaml_path, api_key = NULL, token = NULL
       authenticationSystem = if ("authenticationSystem" %in% names(contributor)) {
         contributor$authenticationSystem
       } else {
-        "FEIDE"  # Default to FEIDE
+        # Automatisk bestemmelse basert på externalId
+        if (grepl("@", contributor$externalId)) "EMAIL" else "FEIDE"
       },
       stringsAsFactors = FALSE
     )
@@ -768,12 +774,16 @@ assign_contributors <- function(test_id, yaml_path, api_key = NULL, token = NULL
           externalId = as.character(contributor$externalId),
           firstName = contributor$firstName,
           lastName = contributor$lastName,
-          email = contributor$email,
           roomName = contributor$roomName,
           buildingName = contributor$buildingName,
           sendNotification = FALSE,
           roles = roles_list
         )
+        
+        # Add email only if it's available and not NA
+        if (!is.na(contributor$email)) {
+          result$email <- contributor$email
+        }
         
         # Add committee if specified
         if (!is.na(contributor$committee) && contributor$committee != "") {
@@ -784,26 +794,45 @@ assign_contributors <- function(test_id, yaml_path, api_key = NULL, token = NULL
       })
     )
     
+    # VERBOSE OUTPUT: Print detailed information about each contributor
+    if (verbose) {
+      cat("\n===== DETAILED CONTRIBUTOR INFORMATION FOR API CALL =====\n")
+      cat("Authentication System:", auth_system, "\n\n")
+      
+      for (i in 1:length(contributor_payload$contributors)) {
+        contrib <- contributor_payload$contributors[[i]]
+        cat("CONTRIBUTOR", i, ":\n")
+        cat("  externalId: ", contrib$externalId, "\n")
+        cat("  firstName: ", contrib$firstName, "\n")
+        cat("  lastName: ", contrib$lastName, "\n")
+        if ("email" %in% names(contrib)) {
+          cat("  email: ", contrib$email, "\n")
+        } else {
+          cat("  email: [NOT PROVIDED]\n")
+        }
+        cat("  roomName: ", contrib$roomName, "\n")
+        cat("  buildingName: ", contrib$buildingName, "\n")
+        cat("  roles: ", paste(unlist(contrib$roles), collapse=", "), "\n")
+        if ("committeesName" %in% names(contrib)) {
+          cat("  committee: ", paste(unlist(contrib$committeesName), collapse=", "), "\n")
+        } else {
+          cat("  committee: [DEFAULT]\n")
+        }
+        cat("  sendNotification: ", contrib$sendNotification, "\n")
+        cat("\n")
+      }
+      
+      # Print the entire JSON payload
+      cat("\n===== COMPLETE JSON PAYLOAD =====\n")
+      cat(jsonlite::toJSON(contributor_payload, pretty=TRUE, auto_unbox=TRUE))
+      cat("\n=====================================\n\n")
+    }
+    
     # Send the API request
     url <- sprintf("https://nokut.inspera.no/api/v1/test/%s/contributors", test_id)
     
     cat("\nSending contributor data to Inspera API:", url, "\n")
     cat("Number of contributors being sent:", length(contributor_payload$contributors), "\n")
-    
-    # Example contributor for logging
-    if (length(contributor_payload$contributors) > 0) {
-      cat("Example contributor (first in list):\n")
-      example <- contributor_payload$contributors[[1]]
-      cat("  Name:", example$firstName, example$lastName, "\n")
-      cat("  ExternalId:", example$externalId, "\n")
-      cat("  Email:", example$email, "\n")
-      cat("  Roles:", paste(unlist(example$roles), collapse=", "), "\n")
-      if ("committeesName" %in% names(example)) {
-        cat("  Committee:", example$committeesName[[1]], "\n")
-      } else {
-        cat("  Committee: None\n")
-      }
-    }
     
     response <- httr::POST(
       url = url,

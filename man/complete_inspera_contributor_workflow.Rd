@@ -2,28 +2,33 @@
 % Please edit documentation in R/workflow.r
 \name{complete_inspera_contributor_workflow}
 \alias{complete_inspera_contributor_workflow}
-\title{Fullstendig arbeidsflyt for bidragsyterhåndtering}
+\title{Komplett arbeidsflyt for å overføre bidragsytere mellom tester}
 \usage{
 complete_inspera_contributor_workflow(
   source_test_id,
   target_test_id,
-  committee_mapping = NULL,
-  api_key = NULL
+  skip_committee_creation = FALSE,
+  api_key = NULL,
+  include_email = TRUE,
+  verbose = TRUE
 )
 }
 \arguments{
-\item{source_test_id}{ID-en til kildetesten}
+\item{source_test_id}{ID for kildetesten}
 
-\item{target_test_id}{ID-en til måltesten}
+\item{target_test_id}{ID for måltesten}
 
-\item{committee_mapping}{Manuell mapping av bidragsytere til komiteer}
+\item{skip_committee_creation}{Hopp over oppretting av komiteer}
 
 \item{api_key}{API-nøkkel for Inspera}
+
+\item{include_email}{Hent og inkluder e-poster for bidragsytere}
+
+\item{verbose}{Skriv ut detaljert informasjon om hver bidragsyter}
 }
 \value{
-En liste med resultater fra hele arbeidsflyten
+En liste med resultater fra arbeidsflyten
 }
 \description{
-Henter bidragsytere fra kildetest, konverterer til YAML med manuell komitétilordning,
-og tilordner dem til en måltest.
+Komplett arbeidsflyt for å overføre bidragsytere mellom tester
 }

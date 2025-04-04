@@ -4,7 +4,7 @@
 \alias{create_committees}
 \title{Opprett komiteer i en test}
 \usage{
-create_committees(test_id, yaml_path, api_key = NULL)
+create_committees(test_id, yaml_path, api_key = NULL, token = NULL)
 }
 \arguments{
 \item{test_id}{ID-en til testen}
@@ -12,6 +12,8 @@ create_committees(test_id, yaml_path, api_key = NULL)
 \item{yaml_path}{Sti til YAML-fil med komiténavn}
 
 \item{api_key}{API-nøkkel for Inspera}
+
+\item{token}{Tilgangstoken (hvis ikke oppgitt, blir det hentet automatisk)}
 }
 \value{
 En liste med resultater for hver komité
