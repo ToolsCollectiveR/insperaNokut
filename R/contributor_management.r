@@ -295,6 +295,166 @@ get_feide_contributors_and_save_csv <- function(test_id, api_key = NULL) {
   ))
 }
 
+#' Hent bidragsytere fra en test med e-postadresser
+#'
+#' Denne funksjonen bygger på get_feide_contributors_and_save_csv, men beriker bidragsytere 
+#' med e-postadresser fra brukerdetaljendepunktet.
+#'
+#' @param test_id ID-en til testen
+#' @param api_key API-nøkkel for Inspera
+#' @param skip_email_lookup Hopp over e-posthenting for å spare API-kall (default: FALSE)
+#' @param batch_size Antall bidragsytere å prosessere per batch (default: 10, for å unngå overbelastning)
+#' @return En liste med dataframes for bidragsytere og annen informasjon
+#' @importFrom httr GET POST add_headers content status_code
+#' @importFrom jsonlite fromJSON toJSON
+#' @importFrom readr write_csv
+#' @export
+get_contributors_with_email <- function(test_id, api_key = NULL, skip_email_lookup = FALSE, batch_size = 10) {
+  # Få faktisk API-nøkkel
+  actual_api_key <- get_api_key(api_key)
+  
+  # Bruk den eksisterende funksjonen for å hente bidragsytere 
+  # (siden denne delen fungerer)
+  cat("Bruker get_feide_contributors_and_save_csv for å hente bidragsytere...\n")
+  result <- get_feide_contributors_and_save_csv(test_id, actual_api_key)
+  
+  # Sjekk at vi fikk bidragsytere
+  if (is.null(result$contributors_with_feide) || nrow(result$contributors_with_feide) == 0) {
+    cat("Ingen bidragsytere funnet i testen.\n")
+    return(result)  # Returner det vi har
+  }
+  
+  # Lag en kopi av bidragsyterdataframen som vi kan berike med e-post
+  enriched_contributors <- result$contributors_with_feide
+  
+  # Legg til en email-kolonne hvis den ikke allerede finnes
+  if (!("email" %in% names(enriched_contributors))) {
+    enriched_contributors$email <- NA_character_
+  }
+  
+  # Hent token fra resultatet
+  token <- result$token
+  
+  # Bare fortsett med e-posthenting hvis det er aktivert
+  if (!skip_email_lookup) {
+    cat("\nHenter e-postadresser for", nrow(enriched_contributors), "bidragsytere...\n")
+    
+    # Finn alle brukere som har userId
+    valid_users <- which(!is.na(enriched_contributors$userId))
+    total_users <- length(valid_users)
+    
+    if (total_users > 0) {
+      cat("Fant", total_users, "brukere med gyldig bruker-ID.\n")
+      
+      # Behandle brukere i batcher
+      num_batches <- ceiling(total_users / batch_size)
+      
+      for (batch_idx in 1:num_batches) {
+        start_idx <- (batch_idx - 1) * batch_size + 1
+        end_idx <- min(batch_idx * batch_size, total_users)
+        
+        batch_users <- valid_users[start_idx:end_idx]
+        
+        cat("\nProsesserer batch", batch_idx, "av", num_batches, 
+            "(brukere", start_idx, "til", end_idx, "av", total_users, ")...\n")
+        
+        # Hent e-post for hver bruker i batchen
+        for (user_idx in batch_users) {
+          user_id <- enriched_contributors$userId[user_idx]
+          
+          cat("Henter informasjon for bruker", 
+              enriched_contributors$firstName[user_idx], 
+              enriched_contributors$lastName[user_idx], 
+              "(ID:", user_id, ")...\n")
+          
+          # Hent detaljert brukerinformasjon
+          user_details <- get_user_details(user_id, token)
+          
+          if (!is.null(user_details) && "email" %in% names(user_details)) {
+            enriched_contributors$email[user_idx] <- user_details$email
+            cat("Lagret e-post:", user_details$email, "\n")
+          } else {
+            cat("Ingen e-post funnet for brukeren.\n")
+          }
+          
+          # Legg inn en kort pause for å unngå å overvelde API-et
+          Sys.sleep(0.2)
+        }
+        
+        # Legg inn en lengre pause mellom batcher
+        if (batch_idx < num_batches) {
+          cat("Pause mellom batcher (2 sekunder)...\n")
+          Sys.sleep(2)
+        }
+      }
+    } else {
+      cat("Ingen brukere med bruker-ID funnet. Kan ikke hente e-postadresser.\n")
+    }
+  } else {
+    cat("\nHopper over e-posthenting (skip_email_lookup = TRUE)\n")
+  }
+  
+  # Lagre berikede bidragsytere til CSV
+  enriched_file <- paste0("test_", test_id, "_contributors_with_email.csv")
+  readr::write_csv(enriched_contributors, enriched_file)
+  cat("Lagret berikede bidragsytere til", enriched_file, "\n")
+  
+  # Opprett YAML-fil med e-postadresser
+  yaml_text <- "contributors:\n"
+  
+  for (i in 1:nrow(enriched_contributors)) {
+    # Bestem verdier for YAML
+    email_value <- if (!is.na(enriched_contributors$email[i])) {
+      enriched_contributors$email[i]
+    } else {
+      paste0(tolower(gsub("[^a-zA-Z0-9]", "", enriched_contributors$firstName[i])), ".",
+             tolower(gsub("[^a-zA-Z0-9]", "", enriched_contributors$lastName[i])), "@nokut.no")
+    }
+    
+    external_id <- if (!is.na(enriched_contributors$feideUsername[i])) {
+      enriched_contributors$feideUsername[i]
+    } else {
+      email_value
+    }
+    
+    auth_system <- if (!is.na(enriched_contributors$feideUsername[i])) {
+      "FEIDE"
+    } else {
+      "EMAIL"
+    }
+    
+    yaml_text <- paste0(yaml_text,
+      "- email: ", email_value, "\n",
+      "  externalId: ", external_id, "\n",
+      "  firstName: ", enriched_contributors$firstName[i], "\n",
+      "  lastName: ", enriched_contributors$lastName[i], "\n",
+      "  roomName: Digital\n",
+      "  buildingName: NOKUT\n",
+      "  role: EVALUATE\n",
+      "  committee: Default\n",
+      "  authenticationSystem: ", auth_system, "\n"
+    )
+  }
+  
+  # Skriv YAML til fil
+  yaml_path <- paste0("test_", test_id, "_contributors_complete.yml")
+  writeLines(yaml_text, yaml_path)
+  cat("YAML-fil opprettet:", yaml_path, "\n")
+  
+  # Skriv ut en oversikt
+  cat("\n==== BIDRAGSYTER OVERSIKT MED E-POST ====\n")
+  cat("Test ID:", test_id, "\n")
+  cat("Test Navn:", ifelse(!is.null(result$test_info$name), result$test_info$name, "Ukjent"), "\n")
+  cat("Totalt antall bidragsytere:", nrow(enriched_contributors), "\n")
+  cat("Antall med identifisert e-post:", sum(!is.na(enriched_contributors$email)), "\n")
+  
+  # Returner det opprinnelige resultatet, men med berikede bidragsytere
+  result$contributors_with_email <- enriched_contributors
+  result$yaml_path_with_email <- yaml_path
+  
+  return(result)
+}
+
 #' Finn FEIDE-brukernavn fra en liste med bidragsytere
 #'
 #' @param contributors_list Liste med bidragsytere

@@ -151,3 +151,125 @@ complete_inspera_contributor_workflow <- function(source_test_id, target_test_id
     workflow_result = workflow_result
   )))
 }
+
+#' Fullstendig arbeidsflyt for bidragsyterhåndtering med e-post
+#'
+#' Henter bidragsytere fra kildetest, berikert med e-postadresser,
+#' konverterer til YAML med manuell komitétilordning, og tilordner dem til en måltest.
+#'
+#' @param source_test_id ID-en til kildetesten
+#' @param target_test_id ID-en til måltesten
+#' @param committee_mapping Manuell mapping av bidragsytere til komiteer
+#' @param api_key API-nøkkel for Inspera
+#' @param include_email Slå på e-posthenting via bruker-API (default: TRUE)
+#' @return En liste med resultater fra hele arbeidsflyten
+#' @export
+complete_inspera_contributor_workflow_with_email <- function(
+  source_test_id, 
+  target_test_id, 
+  committee_mapping = NULL, 
+  api_key = NULL,
+  include_email = TRUE
+) {
+  # Få faktisk API-nøkkel
+  actual_api_key <- get_api_key(api_key)
+  
+  # Del 1: Hent bidragsytere fra kildetesten med e-post
+  cat("\n===== DEL 1: HENTER BIDRAGSYTERE FRA KILDETEST MED E-POST =====\n")
+  
+  if (include_email) {
+    result <- get_contributors_with_email(source_test_id, actual_api_key)
+    csv_file <- paste0("test_", source_test_id, "_contributors_with_email.csv")
+  } else {
+    result <- get_feide_contributors_and_save_csv(source_test_id, actual_api_key)
+    csv_file <- paste0("test_", source_test_id, "_contributors_feide.csv")
+  }
+  
+  # Opprett manuell komité-mapping hvis ikke angitt
+  if (is.null(committee_mapping)) {
+    cat("\nIngen manuell komité-mapping angitt. Skal vi lage en interaktiv mapping? (j/n): ")
+    answer <- tolower(readLines(n = 1))
+    
+    if (answer == "j" || answer == "ja" || answer == "y" || answer == "yes") {
+      cat("\n===== MANUELL KOMITÉNAVNGIVNING =====\n")
+      committee_mapping <- list()
+      
+      # Hvis vi har contributors, lag en mapping
+      contributor_df <- if (include_email) {
+        result$enriched_contributors
+      } else {
+        result$contributors_with_feide
+      }
+      
+      if (!is.null(contributor_df) && nrow(contributor_df) > 0) {
+        # Finn unike bidragsytere
+        unique_contributors <- unique(contributor_df[, c("firstName", "lastName")])
+        
+        # Spør om komité for hver bidragsyter
+        for (i in 1:nrow(unique_contributors)) {
+          name <- paste(unique_contributors$firstName[i], unique_contributors$lastName[i])
+          cat("Angi komité for", name, "(eller trykk Enter for 'Default'): ")
+          committee <- readLines(n = 1)
+          
+          if (committee == "") {
+            committee <- "Default"
+          }
+          
+          committee_mapping[[name]] <- committee
+          cat("Satt", name, "til komité:", committee, "\n")
+        }
+      }
+    } else {
+      cat("Bruker 'Default' som komité for alle bidragsytere.\n")
+      committee_mapping <- list()
+      
+      # Sett alle bidragsytere til "Default" komité
+      contributor_df <- if (include_email) {
+        result$enriched_contributors
+      } else {
+        result$contributors_with_feide
+      }
+      
+      if (!is.null(contributor_df) && nrow(contributor_df) > 0) {
+        unique_contributors <- unique(contributor_df[, c("firstName", "lastName")])
+        
+        for (i in 1:nrow(unique_contributors)) {
+          name <- paste(unique_contributors$firstName[i], unique_contributors$lastName[i])
+          committee_mapping[[name]] <- "Default"
+        }
+      }
+    }
+  }
+  
+  # Skriv ut komité-mapping
+  cat("\n===== KOMITÉ-MAPPING OVERSIKT =====\n")
+  for (name in names(committee_mapping)) {
+    cat(name, "->", committee_mapping[[name]], "\n")
+  }
+  
+  # Del 2: Konverter CSV til YAML med manuell komité-mapping
+  cat("\n===== DEL 2: KONVERTERER TIL YAML MED MANUELL KOMITÉ-MAPPING =====\n")
+  yaml_result <- contributors_feide_csv_to_yaml(csv_file, manual_committee_mapping = committee_mapping)
+  
+  # Del 3: Opprette komiteer og legge til bidragsytere i måltesten
+  cat("\n===== DEL 3: OPPRETTE KOMITEER OG LEGGE TIL BIDRAGSYTERE I MÅLTEST =====\n")
+  workflow_result <- create_committees_and_assign_contributors(target_test_id, yaml_result$yaml_path, actual_api_key)
+  
+  # Oppsummering
+  cat("\n===== ARBEIDSFLYT FULLFØRT =====\n")
+  cat("Kilde-test ID:", source_test_id, "\n")
+  cat("Mål-test ID:", target_test_id, "\n")
+  cat("Antall bidragsytere:", length(committee_mapping), "\n")
+  cat("Antall komiteer:", length(unique(unlist(committee_mapping))), "\n")
+  cat("E-posthenting:", if(include_email) "AKTIVERT" else "DEAKTIVERT", "\n")
+  cat("Status:", if(workflow_result$committee_success && workflow_result$contributor_success) "VELLYKKET" else "DELVIS VELLYKKET", "\n")
+  
+  return(invisible(list(
+    source_test_id = source_test_id,
+    target_test_id = target_test_id,
+    committee_mapping = committee_mapping,
+    yaml_path = yaml_result$yaml_path,
+    workflow_result = workflow_result,
+    include_email = include_email
+  )))
+}

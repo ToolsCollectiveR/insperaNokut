@@ -166,6 +166,47 @@ get_test_info <- function(test_id, token = NULL, api_key = NULL) {
   ))
 }
 
+#' Hent detaljert brukerinformasjon inkludert e-post
+#'
+#' @param user_id Bruker-ID i Inspera
+#' @param token Gyldig API-token
+#' @return Et brukerobjekt som inkluderer e-post hvis tilgjengelig
+#' @importFrom httr GET add_headers content status_code
+#' @importFrom jsonlite fromJSON
+#' @export
+get_user_details <- function(user_id, token) {
+  # Korrekt API-endepunkt for å hente brukerdetaljer
+  user_url <- sprintf("https://nokut.inspera.no/api/v1/users/%s", user_id)
+  
+  cat("Henter detaljer for bruker-ID:", user_id, "...\n")
+  
+  user_response <- httr::GET(
+    url = user_url,
+    httr::add_headers(
+      "Authorization" = paste("Bearer", token),
+      "Accept" = "application/json"
+    )
+  )
+  
+  status <- httr::status_code(user_response)
+  
+  if (status != 200) {
+    cat("Kunne ikke hente brukerinformasjon. Status:", status, "\n")
+    return(NULL)
+  }
+  
+  user_data <- httr::content(user_response, "text", encoding = "UTF-8")
+  user_details <- jsonlite::fromJSON(user_data)
+  
+  if ("email" %in% names(user_details)) {
+    cat("Fant e-post for bruker:", user_details$email, "\n")
+  } else {
+    cat("Ingen e-post funnet for bruker.\n")
+  }
+  
+  return(user_details)
+}
+
 #' Rekursiv funksjon for å flate ut JSON-objekter
 #'
 #' @param json_obj JSON-objekt som skal flates ut
